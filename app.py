@@ -1,3 +1,4 @@
+import yfinance as yf
 from flask import Flask, jsonify
 from flask_cors import CORS
 import os
@@ -12,9 +13,29 @@ etf_list = [
     'KODEX 금융고배당TOP10타겟위클리커버드콜'
 ]
 
+# 실시간 ETF 수익률 데이터를 가져오는 함수
+def get_etf_data(etf_symbol):
+    try:
+        # yfinance에서 주식/ETF 데이터 가져오기
+        etf = yf.Ticker(etf_symbol)
+        hist = etf.history(period="1d")  # 하루의 데이터를 가져옴
+        return hist['Close'].iloc[-1]  # 마지막 종가를 반환
+    except Exception as e:
+        return None
+
 @app.route('/etf-list', methods=['GET'])
 def get_etf_list():
-    return jsonify(etf_list)
+    etf_data = {}
+    for etf in etf_list:
+        # 각 ETF의 실시간 데이터 가져오기
+        data = get_etf_data(etf)
+        if data:
+            etf_data[etf] = {
+                'price': data
+            }
+        else:
+            etf_data[etf] = {'price': 'Error fetching data'}
+    return jsonify(etf_data)
 
 # Render 배포를 위한 포트/호스트 설정
 if __name__ == '__main__':
