@@ -1,43 +1,68 @@
+from flask import Flask, jsonify, request, send_file
 import yfinance as yf
-from flask import Flask, jsonify
-from flask_cors import CORS
-import os
+import matplotlib.pyplot as plt
+import io
+import datetime
 
 app = Flask(__name__)
-CORS(app)
 
-# 더미 ETF 리스트 (실제 연동 시 API나 DB에서 받아오도록 수정 가능)
-etf_list = [
-    '069500',
-    '498400',
-    '498410'
-]
-
-# 실시간 ETF 수익률 데이터를 가져오는 함수
-def get_etf_data(etf_symbol):
-    try:
-        # yfinance에서 주식/ETF 데이터 가져오기
-        etf = yf.Ticker(etf_symbol)
-        hist = etf.history(period="1d")  # 하루의 데이터를 가져옴
-        return hist['Close'].iloc[-1]  # 마지막 종가를 반환
-    except Exception as e:
-        return None
+# 이름과 종목 코드 매핑
+ETF_MAPPING = {
+    'KODEX 금융고배당TOP10타겟위클리커버드콜': '498410.KS',
+    'KODEX 200': '069500.KS',
+    'KODEX 200타겟위클리커버드콜': '498400.KS'
+}
 
 @app.route('/etf-list', methods=['GET'])
 def get_etf_list():
-    etf_data = {}
-    for etf in etf_list:
-        # 각 ETF의 실시간 데이터 가져오기
-        data = get_etf_data(etf)
-        if data:
-            etf_data[etf] = {
-                'price': data
-            }
-        else:
-            etf_data[etf] = {'price': 'Error fetching data'}
-    return jsonify(etf_data)
+    return jsonify(list(ETF_MAPPING.keys()))
 
-# Render 배포를 위한 포트/호스트 설정
+@app.route('/etf-chart', methods=['GET'])
+def get_etf_chart():
+    start = request.args.get('start')
+    end = request.args.get('end')
+    selected_etfs = request.args.get('etfs')
+
+    if not start or not end or not selected_etfs:
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    try:
+        start_date = datetime.datetime.strptime(start, "%Y-%m-%d")
+        end_date = datetime.datetime.strptime(end, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    selected_names = selected_etfs.split(',')
+
+    plt.figure(figsize=(10, 5))
+
+    for name in selected_names:
+        code = ETF_MAPPING.get(name)
+        if not code:
+            continue
+        try:
+            data = yf.download(code, start=start_date, end=end_date)
+            if not data.empty:
+                plt.plot(data.index, data['Adj Close'], label=name)
+        except Exception as e:
+            print(f"Error loading {name}: {e}")
+
+    if plt.gca().has_data():
+        plt.xlabel('Date')
+        plt.ylabel('Price')
+        plt.title(f'Selected ETF Chart: {start} ~ {end}')
+        plt.legend()
+        plt.grid(True)
+
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.close()
+
+        return send_file(buf, mimetype='image/png')
+    else:
+        return jsonify({'error': 'No valid ETF data found'}), 400
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))  # Render는 PORT 환경변수를 지정함
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True)
