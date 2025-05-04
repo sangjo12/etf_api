@@ -1,68 +1,65 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 import yfinance as yf
 import matplotlib.pyplot as plt
 import io
 import datetime
 
 app = Flask(__name__)
+CORS(app)  # 모든 출처에서 접근 허용
 
-# 이름과 종목 코드 매핑
-ETF_MAPPING = {
-    'KODEX 금융고배당TOP10타겟위클리커버드콜': '498410.KS',
+# ETF 이름과 코드 매핑
+ETF_MAP = {
     'KODEX 200': '069500.KS',
-    'KODEX 200타겟위클리커버드콜': '498400.KS'
+    'KODEX 금융고배당TOP10타겟위클리커버드콜': '498410.KS',
+    'KODEX 200타겟위클리커버드콜': '498400.KS',
 }
 
-@app.route('/etf-list', methods=['GET'])
+@app.route("/etf-list", methods=["GET"])
 def get_etf_list():
-    return jsonify(list(ETF_MAPPING.keys()))
+    etfs = [{'name': name, 'code': code} for name, code in ETF_MAP.items()]
+    return jsonify(etfs)
 
-@app.route('/etf-chart', methods=['GET'])
-def get_etf_chart():
-    start = request.args.get('start')
-    end = request.args.get('end')
-    selected_etfs = request.args.get('etfs')
+@app.route("/etf-chart", methods=["POST"])
+def etf_chart():
+    data = request.json
+    selected_etfs = data.get("etfs", [])
+    start = data.get("start")
+    end = data.get("end")
 
-    if not start or not end or not selected_etfs:
-        return jsonify({'error': 'Missing parameters'}), 400
+    if not selected_etfs or not start or not end:
+        return jsonify({"error": "Invalid input"}), 400
 
     try:
         start_date = datetime.datetime.strptime(start, "%Y-%m-%d")
         end_date = datetime.datetime.strptime(end, "%Y-%m-%d")
     except ValueError:
-        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        return jsonify({"error": "Invalid date format"}), 400
 
-    selected_names = selected_etfs.split(',')
+    plt.figure(figsize=(10, 6))
 
-    plt.figure(figsize=(10, 5))
-
-    for name in selected_names:
-        code = ETF_MAPPING.get(name)
+    for name in selected_etfs:
+        code = ETF_MAP.get(name)
         if not code:
             continue
-        try:
-            data = yf.download(code, start=start_date, end=end_date)
-            if not data.empty:
-                plt.plot(data.index, data['Adj Close'], label=name)
-        except Exception as e:
-            print(f"Error loading {name}: {e}")
+        df = yf.download(code, start=start, end=end)
+        if df.empty:
+            continue
+        df['Return'] = df['Adj Close'] / df['Adj Close'].iloc[0] * 100
+        plt.plot(df.index, df['Return'], label=name)
 
-    if plt.gca().has_data():
-        plt.xlabel('Date')
-        plt.ylabel('Price')
-        plt.title(f'Selected ETF Chart: {start} ~ {end}')
-        plt.legend()
-        plt.grid(True)
+    plt.title("ETF 수익률 비교 (%)")
+    plt.xlabel("날짜")
+    plt.ylabel("수익률 (%)")
+    plt.legend()
+    plt.grid(True)
 
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        plt.close()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
 
-        return send_file(buf, mimetype='image/png')
-    else:
-        return jsonify({'error': 'No valid ETF data found'}), 400
+    return send_file(buf, mimetype='image/png')
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
