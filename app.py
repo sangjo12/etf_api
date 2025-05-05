@@ -5,7 +5,7 @@ import pandas as pd
 import math
 
 app = Flask(__name__)
-CORS(app)  # 모든 도메인에서의 접근을 허용
+CORS(app)
 
 # ETF 리스트 정의
 etf_list = [
@@ -33,12 +33,13 @@ def get_etf_data():
     interval = interval_map.get(chart_type, '1d')
 
     try:
-        df = yf.download(code, period='6mo', interval=interval, progress=False)
+        df = yf.download(code, period='6mo', interval=interval, progress=False, auto_adjust=False)
         if df.empty:
+            print("⚠️ Empty DataFrame from yfinance")
             return jsonify([])
 
         df = df.dropna()
-        df = df.tail(100)  # 최근 100개만 사용
+        df = df.tail(100)
 
         result = []
         for index, row in df.iterrows():
@@ -66,10 +67,11 @@ def get_etf_data():
         return jsonify(result)
 
     except Exception as e:
-        print('Error:', e)
+        import traceback
+        print("🔥 Error in /etf-data:", e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-# ✅ 추가: 종가 기반 라인 차트용 API
 @app.route('/etf-close-data')
 def get_etf_close_data():
     code = request.args.get('code')
@@ -85,7 +87,7 @@ def get_etf_close_data():
     interval = interval_map.get(chart_type, '1d')
 
     try:
-        df = yf.download(code, period='6mo', interval=interval, progress=False)
+        df = yf.download(code, period='6mo', interval=interval, progress=False, auto_adjust=False)
         if df.empty:
             print("⚠️ Empty DataFrame from yfinance")
             return jsonify([])
@@ -100,21 +102,26 @@ def get_etf_close_data():
 
         result = []
         for index, row in df.iterrows():
-            if pd.isna(row['Close']):
+            close_val = row['Close']
+            if close_val is None or pd.isna(close_val):
                 continue
+
+            ma20_val = row['MA20']
+            volume_val = row['Volume']
+
             result.append({
                 'date': index.strftime('%Y-%m-%d'),
-                'close': round(row['Close'], 2) if not pd.isna(row['Close']) else None,
-                'ma20': round(row['MA20'], 2) if not pd.isna(row['MA20']) else None,
-                'volume': row['Volume']
+                'close': round(close_val, 2),
+                'ma20': round(ma20_val, 2) if not pd.isna(ma20_val) else None,
+                'volume': volume_val
             })
 
         return jsonify(result)
 
     except Exception as e:
         import traceback
-        print("🔥 Server Error:", e)
-        traceback.print_exc()  # 자세한 스택 트레이스 출력
+        print("🔥 Error in /etf-close-data:", e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
