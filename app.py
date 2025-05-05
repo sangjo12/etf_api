@@ -87,19 +87,24 @@ def get_etf_close_data():
     try:
         df = yf.download(code, period='6mo', interval=interval, progress=False)
         if df.empty:
+            print("⚠️ Empty DataFrame from yfinance")
             return jsonify([])
 
         df = df.dropna()
         df = df.tail(100)
-        df['Close'] = df['Close'].apply(lambda x: math.log(x) if is_log and x > 0 else x)
+
+        if is_log:
+            df['Close'] = df['Close'].apply(lambda x: math.log(x) if x is not None and not pd.isna(x) and x > 0 else None)
+
         df['MA20'] = df['Close'].rolling(window=20).mean()
-        df['Volume'] = df['Volume']
 
         result = []
         for index, row in df.iterrows():
+            if pd.isna(row['Close']):
+                continue
             result.append({
                 'date': index.strftime('%Y-%m-%d'),
-                'close': round(row['Close'], 2),
+                'close': round(row['Close'], 2) if not pd.isna(row['Close']) else None,
                 'ma20': round(row['MA20'], 2) if not pd.isna(row['MA20']) else None,
                 'volume': row['Volume']
             })
@@ -107,7 +112,9 @@ def get_etf_close_data():
         return jsonify(result)
 
     except Exception as e:
-        print('Error:', e)
+        import traceback
+        print("🔥 Server Error:", e)
+        traceback.print_exc()  # 자세한 스택 트레이스 출력
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
