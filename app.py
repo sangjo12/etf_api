@@ -96,18 +96,24 @@ def get_etf_close_data():
         df = df.tail(100)
 
         if is_log:
-            df['Close'] = df['Close'].apply(lambda x: math.log(x) if x is not None and not pd.isna(x) and x > 0 else None)
+            def safe_log(x):
+                try:
+                    return math.log(x) if x is not None and not pd.isna(x) and x > 0 else None
+                except:
+                    return None
+
+            df['Close'] = df['Close'].apply(safe_log)
 
         df['MA20'] = df['Close'].rolling(window=20).mean()
 
         result = []
         for index, row in df.iterrows():
             close_val = row['Close']
-            if close_val is None or pd.isna(close_val):
-                continue
-
             ma20_val = row['MA20']
             volume_val = row['Volume']
+
+            if close_val is None or pd.isna(close_val):
+                continue
 
             result.append({
                 'date': index.strftime('%Y-%m-%d'),
