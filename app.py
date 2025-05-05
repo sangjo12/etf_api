@@ -5,7 +5,7 @@ import pandas as pd
 import math
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # 모든 도메인에서의 접근을 허용
 
 # ETF 리스트 정의
 etf_list = [
